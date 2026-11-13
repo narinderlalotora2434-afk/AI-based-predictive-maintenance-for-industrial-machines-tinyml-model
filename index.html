@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TinyML ESP32 Predictive Maintenance Dashboard</title>
+  <meta name="description" content="Real-time predictive maintenance monitoring, anomaly notifications, and telemetry logging powered by ESP32 TinyML.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Chart.js CDN for real-time telemetry plotting -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header Bar -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo-container">
+        <div class="logo-icon">
+          <i data-lucide="cpu"></i>
+        </div>
+        <div>
+          <h1 class="logo-title">Predictive Maintenance <span class="badge-tinyml">TinyML</span></h1>
+          <p class="logo-subtitle">ESP32 Real-Time Anomaly Telemetry & Fault Logging</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div class="connection-status-pill" id="connectionStatusPill">
+        <span class="status-dot pulsing green" id="statusDot"></span>
+        <span class="status-text" id="statusText">Simulated Live Stream</span>
+      </div>
+      <div class="connection-status-pill" id="sensorModePill" style="margin-left: 0.5rem; background: rgba(6, 182, 212, 0.1); border-color: rgba(6, 182, 212, 0.3);">
+        <i data-lucide="cpu" style="width: 14px; height: 14px; color: #06b6d4;"></i>
+        <span class="status-text" id="sensorModeText" style="color: #06b6d4;">Mode: Simulation</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <button class="btn btn-secondary" id="btnConnectSerial" title="Connect physical ESP32 over USB Serial">
+        <i data-lucide="usb"></i> Connect ESP32
+      </button>
+      
+      <div class="fault-injector-group">
+        <label for="faultSelector" class="injector-label"><i data-lucide="zap"></i> Sim State:</label>
+        <select id="faultSelector" class="select-input">
+          <option value="healthy">Healthy Normal</option>
+          <option value="high_vibration">Severe High Vibration (NOT GOOD)</option>
+          <option value="bearing_wear">Bearing Wear Fault</option>
+          <option value="misalignment">Shaft Misalignment</option>
+          <option value="overheating">Critical Overheating</option>
+        </select>
+      </div>
+
+      <div class="fault-injector-group">
+        <label for="alarmSoundSelector" class="injector-label"><i data-lucide="bell"></i> Alarm Sound:</label>
+        <select id="alarmSoundSelector" class="select-input">
+          <option value="big_horn">📢 Big Industrial Horn (Loud Warning - DEFAULT)</option>
+          <option value="siren">🚨 Heavy Factory Siren</option>
+          <option value="industrial_pulse">🔔 ISO Dual-Tone Beep</option>
+          <option value="scada_chime">🎵 Gentle SCADA Chime</option>
+        </select>
+      </div>
+
+      <button class="btn btn-icon" id="btnAudioToggle" title="Toggle Alarm Sound">
+        <i data-lucide="volume-2" id="audioIcon"></i>
+      </button>
+
+      <button class="btn btn-primary" id="btnExportCSV" title="Export Log History to CSV">
+        <i data-lucide="download"></i> Export Logs
+      </button>
+    </div>
+  </header>
+
+  <!-- Dynamic Active Emergency Alert Banner -->
+  <div class="alert-banner hidden" id="emergencyBanner">
+    <div class="alert-banner-content">
+      <i data-lucide="alert-triangle" class="alert-banner-icon"></i>
+      <div>
+        <strong id="bannerTitle">CRITICAL ANOMALY DETECTED</strong>
+        <span id="bannerMessage">Motor condition degraded to Overheating. Immediate maintenance inspection required.</span>
+      </div>
+    </div>
+    <button class="banner-dismiss" id="btnDismissBanner">&times;</button>
+  </div>
+
+  <!-- Dashboard Main Layout -->
+  <main class="dashboard-container">
+
+    <!-- KPI Metric Cards Grid -->
+    <section class="kpi-grid">
+      <!-- Card 1: Machine Health Status -->
+      <div class="kpi-card" id="cardHealth">
+        <div class="kpi-header">
+          <span class="kpi-title">Overall Health Index</span>
+          <div class="kpi-icon-badge healthy" id="healthIconBadge">
+            <i data-lucide="activity" id="healthIcon"></i>
+          </div>
+        </div>
+        <div class="kpi-value-container">
+          <span class="kpi-value" id="healthScore">99.4%</span>
+          <span class="status-chip healthy" id="conditionChip">HEALTHY</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill healthy" id="healthProgressBar" style="width: 99.4%;"></div>
+        </div>
+        <div class="kpi-subtext" id="healthSubtext">Operating within normal vibration & thermal limits</div>
+      </div>
+
+      <!-- Card 2: Peak Vibration (g) -->
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Vibration Amplitude</span>
+          <div class="kpi-icon-badge blue">
+            <i data-lucide="waves"></i>
+          </div>
+        </div>
+        <div class="kpi-value-container">
+          <span class="kpi-value" id="vibValue">0.39 g</span>
+          <span class="kpi-unit">Peak-to-Peak</span>
+        </div>
+        <div class="sensor-dual-meter">
+          <div class="meter-item">
+            <span>X-Axis:</span> <strong id="vibXVal">0.392 g</strong>
+          </div>
+          <div class="meter-item">
+            <span>Y-Axis:</span> <strong id="vibYVal">-0.985 g</strong>
+          </div>
+        </div>
+        <div class="kpi-subtext">Sampling 200 timesteps @ 100Hz</div>
+      </div>
+
+      <!-- Card 3: Motor Temperature -->
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Motor Temperature</span>
+          <div class="kpi-icon-badge amber" id="tempIconBadge">
+            <i data-lucide="thermometer"></i>
+          </div>
+        </div>
+        <div class="kpi-value-container">
+          <span class="kpi-value" id="tempValue">41.8 °C</span>
+          <span class="kpi-unit">Normal (&lt;75°C)</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill temp" id="tempProgressBar" style="width: 41.8%;"></div>
+        </div>
+        <div class="kpi-subtext" id="tempSubtext">Thermal baseline optimal</div>
+      </div>
+
+      <!-- Card 4: Motor Current (ACS712) -->
+      <div class="kpi-card" id="cardCurrent">
+        <div class="kpi-header">
+          <span class="kpi-title">Motor Current</span>
+          <div class="kpi-icon-badge cyan" id="currentIconBadge">
+            <i data-lucide="zap"></i>
+          </div>
+        </div>
+        <div class="kpi-value-container">
+          <span class="kpi-value" id="currentValue">5.18 A</span>
+          <span class="kpi-unit">Rated 10A Max</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill current" id="currentProgressBar" style="width: 51.8%;"></div>
+        </div>
+        <div class="kpi-subtext" id="currentSubtext">ACS712: Baseline normal load</div>
+      </div>
+
+      <!-- Card 5: Model Latency & RUL -->
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Est. RUL & Latency</span>
+          <div class="kpi-icon-badge purple">
+            <i data-lucide="clock"></i>
+          </div>
+        </div>
+        <div class="kpi-value-container">
+          <span class="kpi-value" id="rulValue">420 hrs</span>
+          <span class="kpi-unit" id="latencyValue">3.1 ms TFLite</span>
+        </div>
+        <div class="sensor-dual-meter">
+          <div class="meter-item">
+            <span>Model:</span> <strong>LSTM Quantized (61KB)</strong>
+          </div>
+          <div class="meter-item">
+            <span>Confidence:</span> <strong id="confidenceVal">99.8%</strong>
+          </div>
+        </div>
+        <div class="kpi-subtext">TFLite Micro on ESP32</div>
+      </div>
+    </section>
+
+    <!-- Visual Charts Grid -->
+    <section class="charts-grid">
+      <!-- Real-time Vibration Chart -->
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <div>
+            <h3 class="chart-title"><i data-lucide="activity"></i> Live Vibration Waveform (2-Axis)</h3>
+            <p class="chart-subtitle">Real-time acceleration signal feeds from ESP32 MEMS sensor</p>
+          </div>
+          <div class="chart-legend-custom">
+            <span class="legend-dot vib-x"></span> Vib X
+            <span class="legend-dot vib-y"></span> Vib Y
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="vibChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Motor Temperature Tracking Chart -->
+      <div class="chart-card">
+        <div class="chart-card-header">
+          <div>
+            <h3 class="chart-title"><i data-lucide="thermometer"></i> Thermal Trend & Thresholds</h3>
+            <p class="chart-subtitle">Real-time motor surface temperature with safety upper bounds</p>
+          </div>
+          <div class="chart-legend-custom">
+            <span class="legend-dot temp-line"></span> Temp (°C)
+            <span class="legend-dot limit-line"></span> Threshold (75°C)
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="tempChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Model Diagnostic Probabilities Chart -->
+      <div class="chart-card chart-card-wide">
+        <div class="chart-card-header">
+          <div>
+            <h3 class="chart-title"><i data-lucide="pie-chart"></i> TinyML Classification Probability Distribution</h3>
+            <p class="chart-subtitle">Live output vector from 2-layer LSTM TFLite Micro neural network</p>
+          </div>
+        </div>
+        <div class="chart-container bar-chart-container">
+          <canvas id="probChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Data Records & Inference Logs Table Section -->
+    <section class="records-section">
+      <div class="records-header">
+        <div>
+          <h2 class="section-title"><i data-lucide="database"></i> Historical Telemetry & Inference Records</h2>
+          <p class="section-subtitle">Timestamped log of recorded sensor snapshots and diagnostic predictions</p>
+        </div>
+
+        <div class="records-controls">
+          <div class="search-box">
+            <i data-lucide="search" class="search-icon"></i>
+            <input type="text" id="logSearch" placeholder="Search records by status or value..." class="search-input">
+          </div>
+          <button class="btn btn-secondary" id="btnClearLogs">
+            <i data-lucide="trash-2"></i> Clear History
+          </button>
+        </div>
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="filter-tabs">
+        <button class="tab-btn active" data-filter="all">All Logs (<span id="countAll">0</span>)</button>
+        <button class="tab-btn" data-filter="healthy">Healthy (<span id="countHealthy">0</span>)</button>
+        <button class="tab-btn" data-filter="bearing_wear">Bearing Wear (<span id="countBearing">0</span>)</button>
+        <button class="tab-btn" data-filter="misalignment">Misalignment (<span id="countMisalign">0</span>)</button>
+        <button class="tab-btn" data-filter="overheating">Overheating (<span id="countOverheat">0</span>)</button>
+      </div>
+
+      <!-- Table Container -->
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Window ID</th>
+              <th>Vib X (g)</th>
+              <th>Vib Y (g)</th>
+              <th>Current (A)</th>
+              <th>Temp (°C)</th>
+              <th>Predicted Condition</th>
+              <th>Confidence</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody">
+            <!-- Dynamic rows inserted here -->
+            <tr class="empty-row" id="emptyRow">
+              <td colspan="9">No records captured yet. Starting telemetry receiver...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Notification Toast Container Stack -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
