@@ -1,0 +1,1 @@
+# AI-based-predictive-maintenance-for-industrial-machines-tinyml-model
