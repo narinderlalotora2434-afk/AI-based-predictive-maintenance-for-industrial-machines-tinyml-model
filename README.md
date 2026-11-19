@@ -1,17 +1,18 @@
 # ⚡ TinyML ESP32 Predictive Maintenance & Anomaly Detection System
 
-A complete, end-to-end TinyML predictive maintenance system that monitors industrial motor health, predicts equipment anomalies (`bearing_wear`, `healthy`, `misalignment`, `overheating`) with **100% accuracy**, runs **TFLite Micro INT8 inference on ESP32 in ~3ms**, and streams live telemetry to a modern web dashboard with industrial emergency horn alarms and CSV data logging.
+A complete, end-to-end TinyML predictive maintenance system that monitors industrial motor health, predicts equipment anomalies (`bearing_wear`, `healthy`, `misalignment`, `overheating`) with **100% accuracy**, runs **TFLite Micro inference on ESP32 in ~3ms**, and streams live 4-channel telemetry (Vibration, Current, Temperature, Sound via INMP441) to a modern web dashboard with industrial emergency horn alarms and CSV data logging.
 
 ---
 
 ## 🌟 Key System Features
 
-- **High-Accuracy Deep Learning Model**: 2-layer LSTM sequence classifier trained on 3-channel vibration, motor current, and thermal datasets (**100% test accuracy**).
-- **Ultra-Compact TFLite Quantization**: Quantized using 8-bit dynamic range and full INT8 post-training quantization for microcontroller deployment.
-- **ESP32 TinyML Microcontroller Engine**: Local TFLite Micro inference execution in C++ using a static 60KB tensor arena and sensor acquisition loops.
+- **High-Accuracy Deep Learning Model**: 2-layer LSTM sequence classifier trained on 4-channel vibration, motor current, thermal, and acoustic sound datasets (**100% test accuracy**).
+- **Ultra-Compact TFLite Quantization**: Quantized using 8-bit dynamic range quantization for microcontroller deployment (62 KB).
+- **ESP32 TinyML Microcontroller Engine**: Local TFLite Micro inference execution in C++ using a static 128KB tensor arena, multi-sensor I2C/ADC/1-Wire/I2S acquisition loops.
+- **INMP441 I2S Digital MEMS Microphone**: High-precision acoustic emission acquisition detecting early bearing micro-cracks and friction squeal.
 - **Real-Time Web Dashboard (`http://localhost:8000`)**:
-  - Live Chart.js telemetry waveforms (Vibration, Motor Current, Temperature oscillogram, confidence trend).
-  - **High Vibration & Thermal Anomaly Alerting**: Flags machine status immediately when sensor readings exceed safety thresholds.
+  - Live Chart.js telemetry waveforms (Vibration, Motor Current, Temperature, Sound, confidence trend).
+  - **High Vibration, Thermal, & Acoustic Anomaly Alerting**: Flags machine status immediately when sensor readings exceed safety thresholds.
   - **Industrial Emergency Horn**: Web Audio synthesizer playing horn alarms during active fault states.
   - **WebSerial API**: Direct streaming connection over USB Serial from physical ESP32 hardware (`115200` baud).
   - **Historical Telemetry Log & CSV Export**: Timestamped record logging with filter tabs, keyword search, and one-click `.csv` export.
@@ -25,11 +26,12 @@ A complete, end-to-end TinyML predictive maintenance system that monitors indust
    • Vibration (g)                 • generate_data.py               • convert_tflite.py
    • Motor Current (A)             • preprocess_data.py             • evaluate_tflite.py
    • Motor Temp (°C)              • train_lstm.py (100%)           • export_for_esp32.py
+   • Sound (INMP441 I2S dB)
 
                                                                           │
                                                                           ▼
 [ Web Dashboard ] <========= [ WebSerial USB ] <========= [ ESP32 Microcontroller ]
- • http://localhost:8000        115200 baud JSON Stream     • TFLite Micro (INT8)
+ • http://localhost:8000        115200 baud JSON Stream     • TFLite Micro (4-Channel)
  • Live Waveforms & KPIs                                    • ~3 ms Inference
  • Industrial Horn Alarm                                    • model_data.h
  • CSV Log Exporter
@@ -95,11 +97,27 @@ Open **`http://localhost:8000`** in Google Chrome, Microsoft Edge, or Opera.
 ## 🔌 ESP32 Hardware Wiring & Flashing Guide
 
 ### **Hardware Wiring Schematics**
-- **MPU6050 3-Axis Accelerometer**:
-  - `VCC` $\rightarrow$ `3.3V` (ESP32)
+- **MPU6050 3-Axis Accelerometer (I2C)**:
+  - `VCC` $\rightarrow$ `3.3V`
   - `GND` $\rightarrow$ `GND`
   - `SDA` $\rightarrow$ `GPIO 21`
   - `SCL` $\rightarrow$ `GPIO 22`
+
+- **INMP441 Digital MEMS Microphone (I2S)**:
+  - `VDD` $\rightarrow$ `3.3V`
+  - `GND` $\rightarrow$ `GND`
+  - `SD` (Data Out) $\rightarrow$ `GPIO 32`
+  - `SCK` (Bit Clock) $\rightarrow$ `GPIO 14`
+  - `WS` (Word Select) $\rightarrow$ `GPIO 15`
+  - `L/R` $\rightarrow$ `GND` (Left Channel)
+
+- **ACS712 Current Sensor**:
+  - `VCC` $\rightarrow$ `5V` (Common GND with ESP32)
+  - `OUT` $\rightarrow$ `GPIO 34` (via 3.3V voltage divider)
+
+- **DS18B20 1-Wire Temperature Sensor**:
+  - `VCC` $\rightarrow$ `3.3V`
+  - `DATA` $\rightarrow$ `GPIO 4` (with 4.7kΩ pull-up to 3.3V)
 
 ### **Flashing to ESP32**
 1. Install required libraries in Arduino IDE (`Sketch -> Include Library -> Manage Libraries...`):

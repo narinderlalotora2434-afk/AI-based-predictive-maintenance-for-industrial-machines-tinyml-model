@@ -98,6 +98,7 @@ def main():
         vib_raw = group['vibration'].values
         cur_raw = group['motor_current'].values
         temp_raw = group['temperature'].values
+        sound_raw = group['sound'].values
         
         n_points = len(group)
         
@@ -109,11 +110,13 @@ def main():
             vib_w = vib_raw[start_idx:end_idx]
             cur_w = cur_raw[start_idx:end_idx]
             temp_w = temp_raw[start_idx:end_idx]
+            sound_w = sound_raw[start_idx:end_idx]
             
             # --- 1. FEATURE EXTRACTION FOR CLASSICAL ML (Random Forest/XGBoost) ---
             v_features = extract_features(vib_w, fs)
             c_features = extract_features(cur_w, fs)
             t_features = extract_features(temp_w, fs)
+            s_features = extract_features(sound_w, fs)
             
             row = {
                 'sample_id': sample_id,
@@ -136,14 +139,20 @@ def main():
                 'temperature_skewness': t_features['skewness'],
                 'temperature_fft_peak_freq': t_features['fft_peak_freq'],
                 'temperature_fft_peak_mag': t_features['fft_peak_mag'],
+
+                'sound_rms': s_features['rms'],
+                'sound_kurtosis': s_features['kurtosis'],
+                'sound_skewness': s_features['skewness'],
+                'sound_fft_peak_freq': s_features['fft_peak_freq'],
+                'sound_fft_peak_mag': s_features['fft_peak_mag'],
                 
                 'label': label
             }
             features_rows.append(row)
             
             # --- 2. RAW WINDOWED SEQUENCE COLLECTION FOR DEEP LEARNING (LSTM) ---
-            # Stacking signals as features for the LSTM window (shape: window_size, 3)
-            window_sequence = np.column_stack([vib_w, cur_w, temp_w])
+            # Stacking signals as features for the LSTM window (shape: window_size, 4)
+            window_sequence = np.column_stack([vib_w, cur_w, temp_w, sound_w])
             lstm_x_list.append(window_sequence)
             lstm_y_list.append(label)
             lstm_sample_ids_list.append(sample_id)

@@ -51,8 +51,11 @@ def export_c_header():
 
         # Scaler parameters
         f.write("// Feature Normalization Parameters\n")
-        f.write(f"const float SCALER_MEAN[3] = {{{mean[0]:.6f}f, {mean[1]:.6f}f, {mean[2]:.6f}f}};\n")
-        f.write(f"const float SCALER_STD[3] = {{{std[0]:.6f}f, {std[1]:.6f}f, {std[2]:.6f}f}};\n\n")
+        means_str = ", ".join(f"{m:.6f}f" for m in mean)
+        stds_str = ", ".join(f"{s:.6f}f" for s in std)
+        f.write(f"const int NUM_CHANNELS_MODEL = {len(mean)};\n")
+        f.write(f"const float SCALER_MEAN[{len(mean)}] = {{{means_str}}};\n")
+        f.write(f"const float SCALER_STD[{len(mean)}] = {{{stds_str}}};\n\n")
 
         # Label definitions
         f.write("// Target Class Labels\n")

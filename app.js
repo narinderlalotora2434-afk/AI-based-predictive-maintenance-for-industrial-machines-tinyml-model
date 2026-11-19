@@ -15,18 +15,39 @@ document.addEventListener('DOMContentLoaded', () => {
     serialPort: null,
     audioEnabled: true,
     alarmPreset: 'big_horn', // big_horn, siren, industrial_pulse, scada_chime
-    activeFaultState: 'healthy', // healthy, bearing_wear, misalignment, overheating
+    activeFaultState: 'healthy', // healthy, bearing_wear, misalignment, overheating, high_vibration
     currentFilter: 'all',
     searchQuery: '',
     sampleCounter: 0,
     records: [],
     maxChartPoints: 30,
+    wasBreached: false,
+    thresholds: {
+      vibLimit: parseFloat(localStorage.getItem('pm_vibLimit')) || 2.50,
+      tempLimit: parseFloat(localStorage.getItem('pm_tempLimit')) || 65.0,
+      soundLimit: parseFloat(localStorage.getItem('pm_soundLimit')) || 80.0,
+      currentLimit: parseFloat(localStorage.getItem('pm_currentLimit')) || 8.00,
+      alarmMode: localStorage.getItem('pm_alarmMode') || 'single' // single, continuous, mute
+    },
+    lastPacket: {
+      timestamp: '--:--:--',
+      windowId: 0,
+      vibX: 0.39,
+      vibY: -0.98,
+      current: 5.15,
+      temp: 24.0,
+      sound: 48.0,
+      predictedClass: 'healthy',
+      confidence: 99.4,
+      probs: [99.4, 0.2, 0.2, 0.2]
+    },
     chartData: {
       labels: [],
       vibX: [],
       vibY: [],
       temp: [],
-      probs: [0.994, 0.002, 0.002, 0.002] // Healthy, Bearing Wear, Misalignment, Overheating
+      sound: [],
+      probs: [0.994, 0.002, 0.002, 0.002]
     }
   };
 
@@ -42,7 +63,23 @@ document.addEventListener('DOMContentLoaded', () => {
     btnExportCSV: document.getElementById('btnExportCSV'),
     btnClearLogs: document.getElementById('btnClearLogs'),
     
-    // KPI Cards
+    // Threshold & Parameter Inputs
+    threshVib: document.getElementById('threshVib'),
+    threshTemp: document.getElementById('threshTemp'),
+    threshSound: document.getElementById('threshSound'),
+    threshCurrent: document.getElementById('threshCurrent'),
+    alarmModeSelect: document.getElementById('alarmModeSelect'),
+    btnSilenceAlarm: document.getElementById('btnSilenceAlarm'),
+    btnResetLimits: document.getElementById('btnResetLimits'),
+
+    // Metric Cards for breached highlight
+    cardHealth: document.getElementById('cardHealth'),
+    cardVib: document.getElementById('cardVib'),
+    cardTemp: document.getElementById('cardTemp'),
+    cardCurrent: document.getElementById('cardCurrent'),
+    cardSound: document.getElementById('cardSound'),
+    
+    // KPI Cards Content
     healthScore: document.getElementById('healthScore'),
     conditionChip: document.getElementById('conditionChip'),
     healthProgressBar: document.getElementById('healthProgressBar'),
@@ -58,17 +95,22 @@ document.addEventListener('DOMContentLoaded', () => {
     tempProgressBar: document.getElementById('tempProgressBar'),
     tempSubtext: document.getElementById('tempSubtext'),
     
-    // Motor Current
+    // Motor Current (ACS712)
     currentValue: document.getElementById('currentValue'),
     currentProgressBar: document.getElementById('currentProgressBar'),
     currentSubtext: document.getElementById('currentSubtext'),
     sensorModeText: document.getElementById('sensorModeText'),
+
+    // Acoustic Sound (INMP441)
+    soundValue: document.getElementById('soundValue'),
+    soundProgressBar: document.getElementById('soundProgressBar'),
+    soundSubtext: document.getElementById('soundSubtext'),
     
     rulValue: document.getElementById('rulValue'),
     latencyValue: document.getElementById('latencyValue'),
     confidenceVal: document.getElementById('confidenceVal'),
     
-    // Banner
+    // Emergency Alert Banner
     emergencyBanner: document.getElementById('emergencyBanner'),
     bannerTitle: document.getElementById('bannerTitle'),
     bannerMessage: document.getElementById('bannerMessage'),
@@ -102,15 +144,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Unlock AudioContext on user interaction
+  // Unlock AudioContext on first user interaction
   document.addEventListener('click', () => {
     initAudioContext();
   }, { once: false });
 
   /**
    * BIG INDUSTRIAL EMERGENCY HORN / KLAXON
-   * Heavy 3-oscillator industrial air horn (Sub-bass 110Hz + 440Hz fundamental + 660Hz fifth)
-   * Big, commanding, un-missable emergency master warning blast.
    */
   function playBigIndustrialHorn() {
     if (!state.audioEnabled) return;
@@ -141,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const oscMid = audioCtx.createOscillator();
       oscMid.type = 'sawtooth';
       oscMid.frequency.setValueAtTime(440, now);
-      oscMid.frequency.linearRampToValueAtTime(455, now + duration); // Pitch swell
+      oscMid.frequency.linearRampToValueAtTime(455, now + duration);
       oscMid.connect(masterGain);
       oscMid.start(now);
       oscMid.stop(now + duration);
@@ -153,7 +193,6 @@ document.addEventListener('DOMContentLoaded', () => {
       oscHigh.connect(masterGain);
       oscHigh.start(now);
       oscHigh.stop(now + duration);
-
     } catch (e) {
       console.warn("Big Horn Audio error:", e);
     }
@@ -259,50 +298,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
   }
 
-  function startAlarmSiren() {
-    if (!state.audioEnabled || isSirenActive) return;
-    isSirenActive = true;
-
-    if (state.alarmPreset === 'big_horn') {
-      playBigIndustrialHorn();
-      alarmIntervalTimer = setInterval(() => {
-        if (isSirenActive && state.audioEnabled) {
-          playBigIndustrialHorn();
-        }
-      }, 1200); // Heavy 1.2s repeating horn blasts
-    } else if (state.alarmPreset === 'siren') {
-      playHeavyFactorySiren();
-      alarmIntervalTimer = setInterval(() => {
-        if (isSirenActive && state.audioEnabled) {
-          playHeavyFactorySiren();
-        }
-      }, 950);
-    } else if (state.alarmPreset === 'scada_chime') {
-      playScadaChime();
-      alarmIntervalTimer = setInterval(() => {
-        if (isSirenActive && state.audioEnabled) {
-          playScadaChime();
-        }
-      }, 1200);
-    } else {
-      // ISO Industrial Beep
-      playIndustrialPulseTone();
-      alarmIntervalTimer = setInterval(() => {
-        if (isSirenActive && state.audioEnabled) {
-          playIndustrialPulseTone();
-        }
-      }, 900);
-    }
-  }
-
-  function stopAlarmSiren() {
-    isSirenActive = false;
-    if (alarmIntervalTimer) {
-      clearInterval(alarmIntervalTimer);
-      alarmIntervalTimer = null;
-    }
-  }
-
   function playAlertSound(type = 'warning') {
     if (!state.audioEnabled) return;
     if (state.alarmPreset === 'big_horn') {
@@ -313,6 +308,27 @@ document.addEventListener('DOMContentLoaded', () => {
       playScadaChime();
     } else {
       playIndustrialPulseTone();
+    }
+  }
+
+  function startAlarmSiren() {
+    if (!state.audioEnabled || isSirenActive) return;
+    isSirenActive = true;
+
+    playAlertSound();
+    const intervalMs = state.alarmPreset === 'siren' ? 950 : 1200;
+    alarmIntervalTimer = setInterval(() => {
+      if (isSirenActive && state.audioEnabled) {
+        playAlertSound();
+      }
+    }, intervalMs);
+  }
+
+  function stopAlarmSiren() {
+    isSirenActive = false;
+    if (alarmIntervalTimer) {
+      clearInterval(alarmIntervalTimer);
+      alarmIntervalTimer = null;
     }
   }
 
@@ -397,7 +413,39 @@ document.addEventListener('DOMContentLoaded', () => {
     options: chartOptionsBase
   });
 
-  // 3. Probabilities Bar Chart
+  // 3. Acoustic Sound Waveform Chart (INMP441)
+  const ctxSound = document.getElementById('soundChart').getContext('2d');
+  const soundChart = new Chart(ctxSound, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'Sound (dB)',
+          data: [],
+          borderColor: '#c084fc',
+          backgroundColor: 'rgba(192, 132, 252, 0.08)',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointBackgroundColor: '#c084fc',
+          tension: 0.3,
+          fill: true
+        },
+        {
+          label: 'Threshold',
+          data: [],
+          borderColor: '#ef4444',
+          borderWidth: 1.5,
+          borderDash: [4, 4],
+          pointRadius: 0,
+          fill: false
+        }
+      ]
+    },
+    options: chartOptionsBase
+  });
+
+  // 4. Probabilities Bar Chart
   const ctxProb = document.getElementById('probChart').getContext('2d');
   const probChart = new Chart(ctxProb, {
     type: 'bar',
@@ -440,49 +488,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const now = new Date();
     const timeStr = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
 
-    let vibX, vibY, current, temp, predictedClass, confidence, probs;
+    let vibX, vibY, current, temp, sound, predictedClass, confidence, probs;
 
     // Simulate based on selected fault state
     switch (state.activeFaultState) {
       case 'high_vibration':
-        // Severe high vibration anomaly (MACHINE IS NOT GOOD)
         vibX = 2.85 + (Math.random() - 0.5) * 1.2;
         vibY = -3.45 + (Math.random() - 0.5) * 1.5;
         current = 6.45 + (Math.random() - 0.5) * 0.8;
         temp = 68.0 + (Math.random() - 0.5) * 3.0;
+        sound = 82.5 + (Math.random() - 0.5) * 3.5;
         predictedClass = 'bearing_wear';
         confidence = 99.2 + Math.random() * 0.7;
         probs = [0.1, 99.2, 0.4, 0.3];
         break;
 
       case 'bearing_wear':
-        // High frequency vibration spikes
         vibX = 0.85 + (Math.random() - 0.5) * 0.4;
         vibY = -1.45 + (Math.random() - 0.5) * 0.5;
         current = 6.15 + (Math.random() - 0.5) * 0.6;
         temp = 54.0 + (Math.random() - 0.5) * 2.0;
+        sound = 84.5 + (Math.random() - 0.5) * 4.0;
         predictedClass = 'bearing_wear';
         confidence = 96.5 + Math.random() * 3.0;
         probs = [2.0, confidence, 1.0, 1.0];
         break;
 
       case 'misalignment':
-        // Amplitude modulation on vibration
         vibX = 1.25 + Math.sin(state.sampleCounter * 0.5) * 0.6;
         vibY = -0.50 + Math.cos(state.sampleCounter * 0.5) * 0.6;
         current = 6.75 + (Math.random() - 0.5) * 0.8;
         temp = 48.5 + (Math.random() - 0.5) * 1.5;
+        sound = 68.2 + (Math.random() - 0.5) * 3.0;
         predictedClass = 'misalignment';
         confidence = 97.2 + Math.random() * 2.5;
         probs = [1.5, 0.5, confidence, 0.8];
         break;
 
       case 'overheating':
-        // High temperature with thermal creep
         vibX = 0.42 + (Math.random() - 0.5) * 0.15;
         vibY = -1.02 + (Math.random() - 0.5) * 0.15;
         current = 8.65 + (Math.random() - 0.5) * 1.0;
         temp = 88.5 + (Math.random() - 0.5) * 4.0;
+        sound = 52.0 + (Math.random() - 0.5) * 2.0;
         predictedClass = 'overheating';
         confidence = 98.8 + Math.random() * 1.0;
         probs = [0.5, 0.3, 0.4, confidence];
@@ -490,11 +538,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       case 'healthy':
       default:
-        // Baseline normal operating parameters
         vibX = 0.39 + (Math.random() - 0.5) * 0.08;
         vibY = -0.98 + (Math.random() - 0.5) * 0.08;
         current = 5.15 + (Math.random() - 0.5) * 0.3;
         temp = 41.5 + (Math.random() - 0.5) * 1.0;
+        sound = 48.2 + (Math.random() - 0.5) * 1.5;
         predictedClass = 'healthy';
         confidence = 99.4 + Math.random() * 0.5;
         probs = [confidence, 0.2, 0.2, 0.2];
@@ -508,6 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
       vibY: parseFloat(vibY.toFixed(3)),
       current: parseFloat(current.toFixed(2)),
       temp: parseFloat(temp.toFixed(1)),
+      sound: parseFloat(sound.toFixed(1)),
       predictedClass,
       confidence: parseFloat(confidence.toFixed(1)),
       probs
@@ -515,29 +564,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- TELEMETRY PROCESSING ---
-  let previousCondition = 'healthy';
-
   function processTelemetry(packet) {
     if (!packet) return;
 
-    // Resilient fallback & normalization for hardware serial streaming
+    // Resilient fallback & normalization for serial/simulation
     if (packet.vibX === undefined && packet.vib !== undefined) {
       packet.vibX = packet.vib;
     }
     if (packet.vibX === undefined) packet.vibX = 0.0;
     if (packet.vibY === undefined) packet.vibY = 0.0;
     if (packet.current === undefined) packet.current = 5.15;
-    if (packet.temp === undefined) packet.temp = 25.0;
+    if (packet.temp === undefined) packet.temp = 24.0;
+    if (packet.sound === undefined) packet.sound = 48.0;
     if (packet.confidence === undefined) packet.confidence = 99.0;
     if (!packet.predictedClass) packet.predictedClass = 'healthy';
-
-    if (packet.latencyMs !== undefined && el.latencyValue) {
-      el.latencyValue.textContent = `${packet.latencyMs.toFixed(1)} ms TFLite`;
-    }
-
-    if (packet.sensorMode !== undefined && el.sensorModeText) {
-      el.sensorModeText.textContent = packet.sensorMode === 'hardware' ? 'Mode: ESP32 Hardware' : 'Mode: ESP32 Sim';
-    }
 
     if (!packet.timestamp) {
       const now = new Date();
@@ -552,108 +592,159 @@ document.addEventListener('DOMContentLoaded', () => {
       packet.probs = [99.0, 0.3, 0.4, 0.3];
     }
 
-    // 1. Update KPI UI Cards
-    updateKPIs(packet);
+    // ALWAYS STORE LAST PACKET FOR IMMEDIATE THRESHOLD RE-EVALUATION
+    state.lastPacket = { ...packet };
 
-    // 2. Update Charts
-    updateCharts(packet);
+    if (packet.latencyMs !== undefined && el.latencyValue) {
+      el.latencyValue.textContent = `${packet.latencyMs.toFixed(1)} ms TFLite`;
+    }
 
-    // 3. Add to Records Log
-    addRecord(packet);
+    if (packet.sensorMode !== undefined && el.sensorModeText) {
+      const isHw = packet.sensorMode === 'hardware';
+      el.sensorModeText.textContent = isHw ? 'Mode: Live Sensors' : 'Mode: Simulation';
+      el.sensorModeText.style.color = isHw ? '#10b981' : '#06b6d4';
+    }
 
-    // 4. Handle Anomaly Notifications & Sound Alerts
-    if (packet.predictedClass !== previousCondition) {
-      triggerConditionAlert(packet.predictedClass, previousCondition);
-      previousCondition = packet.predictedClass;
-    } else if (packet.predictedClass !== 'healthy' || state.activeFaultState !== 'healthy') {
-      // Ensure continuous siren stays sounding while fault is active
-      if (state.audioEnabled && !isSirenActive) {
-        startAlarmSiren();
+    // 1. Evaluate User Threshold Breaches (Master Safety Rule)
+    const currentVib = Math.max(Math.abs(packet.vibX), Math.abs(packet.vibY));
+    const breaches = [];
+    const isVibBreached = currentVib >= state.thresholds.vibLimit;
+    const isTempBreached = packet.temp >= state.thresholds.tempLimit;
+    const isSoundBreached = packet.sound >= state.thresholds.soundLimit;
+    const isCurrentBreached = packet.current >= state.thresholds.currentLimit;
+
+    if (isVibBreached) breaches.push(`Vib (${currentVib.toFixed(2)}g >= ${state.thresholds.vibLimit.toFixed(2)}g)`);
+    if (isTempBreached) breaches.push(`Temp (${packet.temp.toFixed(1)}°C >= ${state.thresholds.tempLimit.toFixed(1)}°C)`);
+    if (isSoundBreached) breaches.push(`Sound (${packet.sound.toFixed(1)}dB >= ${state.thresholds.soundLimit.toFixed(1)}dB)`);
+    if (isCurrentBreached) breaches.push(`Current (${packet.current.toFixed(2)}A >= ${state.thresholds.currentLimit.toFixed(2)}A)`);
+
+    const hasBreach = breaches.length > 0;
+
+    // Visual card highlighting on threshold breach
+    if (el.cardVib) el.cardVib.classList.toggle('breached', isVibBreached);
+    if (el.cardTemp) el.cardTemp.classList.toggle('breached', isTempBreached);
+    if (el.cardSound) el.cardSound.classList.toggle('breached', isSoundBreached);
+    if (el.cardCurrent) el.cardCurrent.classList.toggle('breached', isCurrentBreached);
+
+    // 2. Update KPI UI Cards (Driven strictly by user threshold breach status)
+    updateKPIs(packet, hasBreach, breaches, { isVibBreached, isTempBreached, isSoundBreached, isCurrentBreached, currentVib });
+
+    // 3. Update Charts
+    updateCharts(packet, hasBreach);
+
+    // 4. Add to Records Log
+    addRecord(packet, hasBreach);
+
+    // 5. Alarm Triggering Logic - Driven STRICTLY by User Thresholds
+    if (!hasBreach) {
+      // ALL sensor readings are within user limits -> SILENCE ALL ALARMS IMMEDIATELY
+      stopAlarmSiren();
+      el.emergencyBanner.classList.add('hidden');
+      state.wasBreached = false;
+    } else {
+      // SENSOR HAS REACHED OR EXCEEDED MAXIMUM LIMIT -> TRIGGER ALARM
+      el.emergencyBanner.classList.remove('hidden');
+      el.bannerTitle.textContent = 'SAFETY LIMIT EXCEEDED: ' + breaches.join(' | ');
+      el.bannerMessage.textContent = 'Live sensor reading reached maximum safety threshold! Immediate attention required.';
+
+      if (state.thresholds.alarmMode === 'single') {
+        // Trigger a single beep only once upon exceeding the limit
+        if (!state.wasBreached) {
+          playAlertSound('warning');
+          showToast('LIMIT EXCEEDED', `Alarm triggered: ${breaches[0]}`, 'danger');
+          state.wasBreached = true;
+        }
+        stopAlarmSiren();
+      } else if (state.thresholds.alarmMode === 'continuous') {
+        if (!isSirenActive && state.audioEnabled) {
+          startAlarmSiren();
+        }
+        state.wasBreached = true;
+      } else {
+        // Mute
+        stopAlarmSiren();
       }
     }
   }
 
-  function updateKPIs(packet) {
-    el.vibValue.textContent = `${Math.abs(packet.vibX).toFixed(2)} g`;
+  function updateKPIs(packet, hasBreach, breaches, details) {
+    // Vibration KPI
+    el.vibValue.textContent = `${details.currentVib.toFixed(2)} g`;
     el.vibXVal.textContent = `${packet.vibX > 0 ? '+' : ''}${packet.vibX} g`;
     el.vibYVal.textContent = `${packet.vibY > 0 ? '+' : ''}${packet.vibY} g`;
 
-    el.tempValue.textContent = `${packet.temp} °C`;
+    // Temperature KPI
+    el.tempValue.textContent = `${packet.temp.toFixed(1)} °C`;
     const tempPercent = Math.min(100, Math.max(0, (packet.temp / 100) * 100));
     el.tempProgressBar.style.width = `${tempPercent}%`;
+    if (el.tempSubtext) {
+      el.tempSubtext.textContent = details.isTempBreached
+        ? `⚠️ EXCEEDS MAX LIMIT (${state.thresholds.tempLimit.toFixed(1)}°C)`
+        : `Thermal baseline optimal (<${state.thresholds.tempLimit.toFixed(1)}°C)`;
+    }
 
-    // Motor Current KPI update
+    // Motor Current KPI (ACS712)
     if (el.currentValue) {
       el.currentValue.textContent = `${packet.current.toFixed(2)} A`;
       const currentPercent = Math.min(100, Math.max(0, (packet.current / 10.0) * 100));
       el.currentProgressBar.style.width = `${currentPercent}%`;
-      if (packet.current > 7.5) {
-        el.currentSubtext.textContent = 'WARNING: High current draw / severe overload';
-      } else if (packet.current > 6.0) {
-        el.currentSubtext.textContent = 'Elevated current draw (load spike)';
-      } else {
-        el.currentSubtext.textContent = 'ACS712: Baseline normal load (5.0 - 6.5A)';
+      if (el.currentSubtext) {
+        el.currentSubtext.textContent = details.isCurrentBreached
+          ? `⚠️ EXCEEDS MAX LIMIT (${state.thresholds.currentLimit.toFixed(2)}A)`
+          : `ACS712: Baseline normal load (<${state.thresholds.currentLimit.toFixed(2)}A)`;
+      }
+    }
+
+    // Acoustic Sound KPI (INMP441)
+    if (el.soundValue) {
+      el.soundValue.textContent = `${packet.sound.toFixed(1)} dB`;
+      const soundPercent = Math.min(100, Math.max(0, (packet.sound / 100.0) * 100));
+      if (el.soundProgressBar) el.soundProgressBar.style.width = `${soundPercent}%`;
+      if (el.soundSubtext) {
+        el.soundSubtext.textContent = details.isSoundBreached
+          ? `⚠️ EXCEEDS MAX LIMIT (${state.thresholds.soundLimit.toFixed(1)}dB)`
+          : `INMP441: Acoustic noise nominal (<${state.thresholds.soundLimit.toFixed(1)}dB)`;
       }
     }
 
     el.confidenceVal.textContent = `${packet.confidence}%`;
 
-    // Health Score calculation
-    let healthScore = 99.4;
-    let chipClass = 'healthy';
-    let chipLabel = 'HEALTHY';
-    let subtext = 'Operating within normal vibration & thermal limits';
-    let rul = '420 hrs';
-
-    if (state.activeFaultState === 'high_vibration' || Math.abs(packet.vibX) > 2.0 || Math.abs(packet.vibY) > 2.0) {
-      healthScore = 22.5;
-      chipClass = 'danger';
-      chipLabel = 'HIGH VIB (NOT GOOD)';
-      subtext = 'CRITICAL FAULT: High vibration amplitude exceeds 2.0g safety limit! Machine is UNHEALTHY!';
-      rul = '18 hrs';
-    } else if (packet.predictedClass === 'bearing_wear') {
-      healthScore = 52.4;
-      chipClass = 'warning';
-      chipLabel = 'BEARING FAULT (BAD)';
-      subtext = 'High frequency mechanical vibration spikes detected on X/Y axis';
-      rul = '85 hrs';
-    } else if (packet.predictedClass === 'misalignment') {
-      healthScore = 61.8;
-      chipClass = 'purple';
-      chipLabel = 'MISALIGNMENT (BAD)';
-      subtext = 'Harmonic rotational vibration imbalance detected';
-      rul = '120 hrs';
-    } else if (packet.predictedClass === 'overheating') {
-      healthScore = 28.5;
-      chipClass = 'danger';
-      chipLabel = 'OVERHEATING (BAD)';
-      subtext = 'Motor body temperature exceeded safety limit threshold (75°C)';
-      rul = '12 hrs';
+    // Overall Health Index & Status Chip (STRICTLY determined by threshold breaches)
+    if (!hasBreach) {
+      el.healthScore.textContent = '99.4%';
+      el.healthProgressBar.style.width = '99.4%';
+      el.healthProgressBar.className = 'progress-bar-fill healthy';
+      el.conditionChip.className = 'status-chip healthy';
+      el.conditionChip.textContent = 'HEALTHY (NORMAL)';
+      el.healthSubtext.textContent = 'All sensor readings within user-configured safety limits.';
+      el.rulValue.textContent = '420 hrs';
+      if (el.cardHealth) el.cardHealth.classList.remove('breached');
+    } else {
+      el.healthScore.textContent = '24.5%';
+      el.healthProgressBar.style.width = '24.5%';
+      el.healthProgressBar.className = 'progress-bar-fill danger';
+      el.conditionChip.className = 'status-chip danger';
+      el.conditionChip.textContent = 'CRITICAL LIMIT EXCEEDED';
+      el.healthSubtext.textContent = `CRITICAL: Exceeded ${breaches.join(' | ')}`;
+      el.rulValue.textContent = '12 hrs';
+      if (el.cardHealth) el.cardHealth.classList.add('breached');
     }
-
-    el.healthScore.textContent = `${healthScore.toFixed(1)}%`;
-    el.healthProgressBar.style.width = `${healthScore}%`;
-    el.healthSubtext.textContent = subtext;
-    el.rulValue.textContent = rul;
-
-    el.conditionChip.className = `status-chip ${chipClass}`;
-    el.conditionChip.textContent = chipLabel;
-
-    el.healthProgressBar.className = `progress-bar-fill ${chipClass === 'warning' ? 'temp' : chipClass}`;
   }
 
-  function updateCharts(packet) {
+  function updateCharts(packet, hasBreach) {
     const labels = state.chartData.labels;
     labels.push(packet.timestamp);
     state.chartData.vibX.push(packet.vibX);
     state.chartData.vibY.push(packet.vibY);
     state.chartData.temp.push(packet.temp);
+    state.chartData.sound.push(packet.sound);
 
     if (labels.length > state.maxChartPoints) {
       labels.shift();
       state.chartData.vibX.shift();
       state.chartData.vibY.shift();
       state.chartData.temp.shift();
+      state.chartData.sound.shift();
     }
 
     // Update Vibration chart
@@ -665,18 +756,43 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update Temperature chart
     tempChart.data.labels = labels;
     tempChart.data.datasets[0].data = state.chartData.temp;
-    tempChart.data.datasets[1].data = Array(labels.length).fill(75.0); // 75C Threshold line
+    tempChart.data.datasets[1].data = Array(labels.length).fill(state.thresholds.tempLimit);
     tempChart.update('none');
 
+    // Update Acoustic Sound chart
+    soundChart.data.labels = labels;
+    soundChart.data.datasets[0].data = state.chartData.sound;
+    soundChart.data.datasets[1].data = Array(labels.length).fill(state.thresholds.soundLimit);
+    soundChart.update('none');
+
+    // Update dynamic legend threshold numbers
+    const tempLegendVal = document.getElementById('tempLegendVal');
+    const soundLegendVal = document.getElementById('soundLegendVal');
+    if (tempLegendVal) tempLegendVal.textContent = `${state.thresholds.tempLimit.toFixed(0)}°C`;
+    if (soundLegendVal) soundLegendVal.textContent = `${state.thresholds.soundLimit.toFixed(0)}dB`;
+
     // Update Probability Bar chart
-    probChart.data.datasets[0].data = packet.probs;
+    if (!hasBreach && state.activeFaultState === 'healthy') {
+      probChart.data.datasets[0].data = [99.4, 0.2, 0.2, 0.2];
+    } else {
+      probChart.data.datasets[0].data = packet.probs;
+    }
     probChart.update();
   }
 
   // --- RECORDS TABLE MANAGEMENT ---
-  function addRecord(packet) {
-    state.records.unshift(packet); // Add to beginning
-    if (state.records.length > 200) state.records.pop(); // Cap at 200 items
+  function addRecord(packet, hasBreach) {
+    const record = { ...packet };
+    // If not in breach and active fault is healthy, ensure log displays healthy status
+    if (!hasBreach && state.activeFaultState === 'healthy') {
+      record.predictedClass = 'healthy';
+      record.confidence = 99.4;
+    } else if (hasBreach && record.predictedClass === 'healthy') {
+      record.predictedClass = 'bearing_wear';
+    }
+
+    state.records.unshift(record);
+    if (state.records.length > 200) state.records.pop();
 
     updateFilterCounts();
     renderTable();
@@ -703,7 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (filtered.length === 0) {
       el.logTableBody.innerHTML = `
         <tr class="empty-row">
-          <td colspan="8">No telemetry records match current filter.</td>
+          <td colspan="10">No telemetry records match current filter.</td>
         </tr>
       `;
       return;
@@ -712,7 +828,7 @@ document.addEventListener('DOMContentLoaded', () => {
     el.logTableBody.innerHTML = filtered.map(r => {
       let badgeClass = 'healthy';
       let label = 'Healthy';
-      if (r.predictedClass === 'bearing_wear') { badgeClass = 'warning'; label = 'Bearing Wear'; }
+      if (r.predictedClass === 'bearing_wear') { badgeClass = 'warning'; label = 'Limit Exceeded / Fault'; }
       if (r.predictedClass === 'misalignment') { badgeClass = 'purple'; label = 'Misalignment'; }
       if (r.predictedClass === 'overheating') { badgeClass = 'danger'; label = 'Overheating'; }
 
@@ -724,6 +840,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${r.vibY > 0 ? '+' : ''}${r.vibY}</td>
           <td>${r.current !== undefined ? r.current.toFixed(2) : '5.15'} A</td>
           <td>${r.temp} °C</td>
+          <td>${r.sound !== undefined ? r.sound.toFixed(1) : '48.0'} dB</td>
           <td><strong>${label}</strong></td>
           <td>${r.confidence}%</td>
           <td><span class="status-chip ${badgeClass}">${label}</span></td>
@@ -762,41 +879,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 5000);
   }
 
-  function triggerConditionAlert(newClass, oldClass) {
-    if (state.activeFaultState === 'high_vibration') {
-      el.emergencyBanner.classList.remove('hidden');
-      el.bannerTitle.textContent = 'CRITICAL ALARM: SEVERE HIGH VIBRATION (MACHINE IS NOT GOOD)';
-      el.bannerMessage.textContent = 'Vibration amplitude exceeded 2.0g. Machine condition is UNHEALTHY / BAD! Immediate mechanical inspection required.';
-      showToast('CRITICAL HIGH VIBRATION', 'Extreme vibration detected! Machine state is UNHEALTHY (NOT GOOD).', 'danger');
-      playAlertSound('danger');
-      startAlarmSiren();
-    } else if (newClass === 'overheating') {
-      el.emergencyBanner.classList.remove('hidden');
-      el.bannerTitle.textContent = 'CRITICAL ALARM: MOTOR OVERHEATING';
-      el.bannerMessage.textContent = 'Temperature reached dangerous levels. Recommended immediate shutdown to prevent motor winding damage.';
-      showToast('CRITICAL OVERHEATING', 'Motor surface temperature exceeded 85°C safety ceiling.', 'danger');
-      playAlertSound('danger');
-      startAlarmSiren();
-    } else if (newClass === 'bearing_wear') {
-      el.emergencyBanner.classList.remove('hidden');
-      el.bannerTitle.textContent = 'BEARING FAULT DETECTED (MACHINE IS NOT GOOD)';
-      el.bannerMessage.textContent = 'High-frequency mechanical vibration spikes detected on X/Y axis. Machine health degraded!';
-      showToast('BEARING WEAR WARNING (NOT GOOD)', 'High-frequency vibration anomaly detected on X/Y accelerometer axis.', 'warning');
-      playAlertSound('warning');
-      startAlarmSiren();
-    } else if (newClass === 'misalignment') {
-      el.emergencyBanner.classList.remove('hidden');
-      el.bannerTitle.textContent = 'SHAFT MISALIGNMENT FAULT (MACHINE IS NOT GOOD)';
-      el.bannerMessage.textContent = 'Harmonic rotational vibration imbalance detected. Inspect coupling and shaft alignment!';
-      showToast('SHAFT MISALIGNMENT ALERT (NOT GOOD)', 'Rotational harmonic imbalance detected in sequence window.', 'purple');
-      playAlertSound('warning');
-      startAlarmSiren();
-    } else if (newClass === 'healthy') {
-      el.emergencyBanner.classList.add('hidden');
-      if (oldClass !== 'healthy') {
-        showToast('SYSTEM RESTORED', 'Machine telemetry returned to optimal healthy status.', 'healthy');
-      }
-      stopAlarmSiren();
+  // --- IMMEDIATE THRESHOLD RE-EVALUATION FUNCTION ---
+  function evaluateThresholdsNow() {
+    if (state.lastPacket) {
+      processTelemetry(state.lastPacket);
     }
   }
 
@@ -825,21 +911,128 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.lucide) lucide.createIcons();
     if (!state.audioEnabled) {
       stopAlarmSiren();
-    } else if (state.activeFaultState !== 'healthy') {
-      startAlarmSiren();
     }
-    showToast('Audio Notification', state.audioEnabled ? 'Alarm sound cues & siren enabled' : 'Alarm audio muted', 'healthy');
+    showToast('Audio Notification', state.audioEnabled ? 'Alarm audio enabled' : 'Alarm audio muted', 'healthy');
   });
 
   el.btnDismissBanner.addEventListener('click', () => {
     el.emergencyBanner.classList.add('hidden');
+    stopAlarmSiren();
   });
+
+  // Populate Initial Threshold Inputs from state
+  if (el.threshVib) el.threshVib.value = state.thresholds.vibLimit;
+  if (el.threshTemp) el.threshTemp.value = state.thresholds.tempLimit;
+  if (el.threshSound) el.threshSound.value = state.thresholds.soundLimit;
+  if (el.threshCurrent) el.threshCurrent.value = state.thresholds.currentLimit;
+  if (el.alarmModeSelect) el.alarmModeSelect.value = state.thresholds.alarmMode;
+
+  // Real-Time Threshold Input Handlers (Instant Re-evaluation & LocalStorage sync)
+  if (el.threshVib) {
+    el.threshVib.addEventListener('input', (e) => {
+      state.thresholds.vibLimit = parseFloat(e.target.value) || 2.50;
+      localStorage.setItem('pm_vibLimit', state.thresholds.vibLimit);
+      evaluateThresholdsNow();
+    });
+  }
+
+  if (el.threshTemp) {
+    el.threshTemp.addEventListener('input', (e) => {
+      state.thresholds.tempLimit = parseFloat(e.target.value) || 65.0;
+      localStorage.setItem('pm_tempLimit', state.thresholds.tempLimit);
+      evaluateThresholdsNow();
+    });
+  }
+
+  if (el.threshSound) {
+    el.threshSound.addEventListener('input', (e) => {
+      state.thresholds.soundLimit = parseFloat(e.target.value) || 80.0;
+      localStorage.setItem('pm_soundLimit', state.thresholds.soundLimit);
+      evaluateThresholdsNow();
+    });
+  }
+
+  if (el.threshCurrent) {
+    el.threshCurrent.addEventListener('input', (e) => {
+      state.thresholds.currentLimit = parseFloat(e.target.value) || 8.00;
+      localStorage.setItem('pm_currentLimit', state.thresholds.currentLimit);
+      evaluateThresholdsNow();
+    });
+  }
+
+  if (el.alarmModeSelect) {
+    el.alarmModeSelect.addEventListener('change', (e) => {
+      state.thresholds.alarmMode = e.target.value;
+      localStorage.setItem('pm_alarmMode', state.thresholds.alarmMode);
+      if (state.thresholds.alarmMode !== 'continuous') {
+        stopAlarmSiren();
+      }
+      evaluateThresholdsNow();
+      showToast('Beep Mode Updated', `Alarm set to: ${e.target.options[e.target.selectedIndex].text}`, 'healthy');
+    });
+  }
+
+  if (el.btnSilenceAlarm) {
+    el.btnSilenceAlarm.addEventListener('click', () => {
+      stopAlarmSiren();
+      state.thresholds.alarmMode = 'single';
+      if (el.alarmModeSelect) el.alarmModeSelect.value = 'single';
+      localStorage.setItem('pm_alarmMode', 'single');
+      evaluateThresholdsNow();
+      showToast('Alarm Silenced', 'Active siren stopped.', 'healthy');
+    });
+  }
+
+  if (el.btnResetLimits) {
+    el.btnResetLimits.addEventListener('click', () => {
+      state.thresholds.vibLimit = 2.50;
+      state.thresholds.tempLimit = 65.0;
+      state.thresholds.soundLimit = 80.0;
+      state.thresholds.currentLimit = 8.00;
+      state.thresholds.alarmMode = 'single';
+
+      localStorage.setItem('pm_vibLimit', 2.50);
+      localStorage.setItem('pm_tempLimit', 65.0);
+      localStorage.setItem('pm_soundLimit', 80.0);
+      localStorage.setItem('pm_currentLimit', 8.00);
+      localStorage.setItem('pm_alarmMode', 'single');
+
+      if (el.threshVib) el.threshVib.value = 2.50;
+      if (el.threshTemp) el.threshTemp.value = 65.0;
+      if (el.threshSound) el.threshSound.value = 80.0;
+      if (el.threshCurrent) el.threshCurrent.value = 8.00;
+      if (el.alarmModeSelect) el.alarmModeSelect.value = 'single';
+
+      stopAlarmSiren();
+      evaluateThresholdsNow();
+      showToast('Limits Reset', 'All thresholds reset to industrial defaults (Vib 2.5g, Temp 65°C, Sound 80dB, Current 8A).', 'healthy');
+    });
+  }
+
+  // Click Mode Pill to toggle Hardware vs Simulation mode on ESP32
+  const modePill = document.getElementById('sensorModePill');
+  if (modePill) {
+    modePill.style.cursor = 'pointer';
+    modePill.title = 'Click to toggle Hardware / Simulation mode on ESP32';
+    modePill.addEventListener('click', async () => {
+      if (state.isSerialConnected && state.serialPort && state.serialPort.writable) {
+        try {
+          const writer = state.serialPort.writable.getWriter();
+          await writer.write(new TextEncoder().encode("h\n"));
+          writer.releaseLock();
+          showToast('Mode Switch', 'Sent command to activate LIVE HARDWARE SENSORS.', 'healthy');
+        } catch (e) {
+          console.warn("Error sending mode switch:", e);
+        }
+      }
+    });
+  }
 
   el.btnClearLogs.addEventListener('click', () => {
     state.records = [];
     updateFilterCounts();
     renderTable();
-    showToast('Logs Cleared', 'Historical telemetry records cleared from local view.', 'healthy');
+    showToast('Logs Cleared', 'Historical telemetry records cleared.', 'healthy');
   });
 
   el.logSearch.addEventListener('input', (e) => {
@@ -864,14 +1057,15 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const headers = ['Timestamp', 'Window_ID', 'Vib_X_g', 'Vib_Y_g', 'Current_A', 'Temp_C', 'Predicted_Condition', 'Confidence_Pct'];
+    const headers = ['Timestamp', 'Window_ID', 'Vib_X_g', 'Vib_Y_g', 'Current_A', 'Temp_C', 'Sound_dB', 'Condition', 'Confidence_Pct'];
     const rows = state.records.map(r => [
       r.timestamp,
       r.windowId,
       r.vibX,
       r.vibY,
-      r.current !== undefined ? r.current : 5.15,
+      r.current !== undefined ? r.current.toFixed(2) : '5.15',
       r.temp,
+      r.sound !== undefined ? r.sound.toFixed(1) : '48.0',
       r.predictedClass,
       r.confidence
     ]);
@@ -887,7 +1081,7 @@ document.addEventListener('DOMContentLoaded', () => {
     link.click();
     document.body.removeChild(link);
 
-    showToast('CSV Export', `Exported ${state.records.length} telemetry records to CSV file.`, 'healthy');
+    showToast('CSV Export', `Exported ${state.records.length} telemetry records to CSV.`, 'healthy');
   });
 
   // WebSerial Integration & Clean Disconnect Support
@@ -938,6 +1132,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (window.lucide) lucide.createIcons();
 
       showToast('ESP32 Serial Connected', 'Receiving live hardware telemetry over WebSerial.', 'healthy');
+
+      // Command ESP32 to switch to Hardware Sensor Mode
+      try {
+        if (state.serialPort.writable) {
+          const writer = state.serialPort.writable.getWriter();
+          await writer.write(new TextEncoder().encode("h\n"));
+          writer.releaseLock();
+        }
+      } catch (we) {
+        console.debug("Serial write error:", we);
+      }
+
       readSerialStream();
     } catch (err) {
       console.warn("WebSerial connection cancelled or failed:", err);
@@ -994,7 +1200,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- START REAL-TIME SIMULATION LOOP ---
-  // Runs every 1 second (1000ms)
+  // Runs every 1 second when physical serial is not streaming
   setInterval(() => {
     if (!state.isSerialConnected) {
       const packet = generateTelemetryPacket();

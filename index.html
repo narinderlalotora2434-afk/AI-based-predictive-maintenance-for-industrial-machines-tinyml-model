@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>TinyML ESP32 Predictive Maintenance Dashboard</title>
   <meta name="description" content="Real-time predictive maintenance monitoring, anomaly notifications, and telemetry logging powered by ESP32 TinyML.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
@@ -97,6 +100,65 @@
   <!-- Dashboard Main Layout -->
   <main class="dashboard-container">
 
+    <!-- Sensor Alarm Thresholds & Safety Parameters Bar -->
+    <section class="thresholds-bar">
+      <div class="thresholds-header">
+        <div class="thresholds-title">
+          <i data-lucide="sliders" style="width: 16px; height: 16px; color: #06b6d4;"></i>
+          <span>Alarm Parameter Limits & Triggers</span>
+        </div>
+        <div class="thresholds-actions">
+          <span class="thresholds-hint">Alarm triggers if readings reach or exceed these maximum limits</span>
+          <button class="btn btn-sm btn-outline" id="btnSilenceAlarm" title="Silence Active Siren">
+            <i data-lucide="volume-x"></i> Silence Siren
+          </button>
+          <button class="btn btn-sm btn-secondary" id="btnResetLimits" title="Reset Thresholds to Industrial Defaults">
+            <i data-lucide="rotate-ccw"></i> Reset Defaults
+          </button>
+        </div>
+      </div>
+
+      <!-- User Maximum Limits -->
+      <div class="thresholds-inputs">
+        <div class="threshold-item">
+          <label for="threshVib"><i data-lucide="activity"></i> Max Vibration:</label>
+          <div class="input-unit">
+            <input type="number" id="threshVib" value="2.50" step="0.1" min="0.1" max="20.0">
+            <span>g</span>
+          </div>
+        </div>
+        <div class="threshold-item">
+          <label for="threshTemp"><i data-lucide="thermometer"></i> Max Temp:</label>
+          <div class="input-unit">
+            <input type="number" id="threshTemp" value="65.0" step="1.0" min="10.0" max="150.0">
+            <span>°C</span>
+          </div>
+        </div>
+        <div class="threshold-item">
+          <label for="threshSound"><i data-lucide="mic"></i> Max Sound:</label>
+          <div class="input-unit">
+            <input type="number" id="threshSound" value="80.0" step="1.0" min="30.0" max="120.0">
+            <span>dB</span>
+          </div>
+        </div>
+        <div class="threshold-item">
+          <label for="threshCurrent"><i data-lucide="zap"></i> Max Current:</label>
+          <div class="input-unit">
+            <input type="number" id="threshCurrent" value="8.00" step="0.1" min="0.5" max="30.0">
+            <span>A</span>
+          </div>
+        </div>
+        <div class="threshold-item">
+          <label for="alarmModeSelect"><i data-lucide="bell"></i> Beep Behavior:</label>
+          <select id="alarmModeSelect" class="select-input-sm">
+            <option value="single" selected>🔔 Single Beep on Max Limit</option>
+            <option value="continuous">🚨 Repeating Continuous Siren</option>
+            <option value="mute">🔇 Mute (Visual Alerts Only)</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
     <!-- KPI Metric Cards Grid -->
     <section class="kpi-grid">
       <!-- Card 1: Machine Health Status -->
@@ -118,7 +180,7 @@
       </div>
 
       <!-- Card 2: Peak Vibration (g) -->
-      <div class="kpi-card">
+      <div class="kpi-card" id="cardVib">
         <div class="kpi-header">
           <span class="kpi-title">Vibration Amplitude</span>
           <div class="kpi-icon-badge blue">
@@ -141,7 +203,7 @@
       </div>
 
       <!-- Card 3: Motor Temperature -->
-      <div class="kpi-card">
+      <div class="kpi-card" id="cardTemp">
         <div class="kpi-header">
           <span class="kpi-title">Motor Temperature</span>
           <div class="kpi-icon-badge amber" id="tempIconBadge">
@@ -176,7 +238,25 @@
         <div class="kpi-subtext" id="currentSubtext">ACS712: Baseline normal load</div>
       </div>
 
-      <!-- Card 5: Model Latency & RUL -->
+      <!-- Card 5: Acoustic Sound (INMP441 I2S) -->
+      <div class="kpi-card" id="cardSound">
+        <div class="kpi-header">
+          <span class="kpi-title">Acoustic Sound</span>
+          <div class="kpi-icon-badge purple" id="soundIconBadge">
+            <i data-lucide="mic"></i>
+          </div>
+        </div>
+        <div class="kpi-value-container">
+          <span class="kpi-value" id="soundValue">48.2 dB</span>
+          <span class="kpi-unit">SPL (INMP441)</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="soundProgressBar" style="width: 48.2%; background: linear-gradient(90deg, #a855f7, #c084fc);"></div>
+        </div>
+        <div class="kpi-subtext" id="soundSubtext">INMP441: Acoustic noise nominal (&lt;70dB)</div>
+      </div>
+
+      <!-- Card 6: Model Latency & RUL -->
       <div class="kpi-card">
         <div class="kpi-header">
           <span class="kpi-title">Est. RUL & Latency</span>
@@ -190,7 +270,7 @@
         </div>
         <div class="sensor-dual-meter">
           <div class="meter-item">
-            <span>Model:</span> <strong>LSTM Quantized (61KB)</strong>
+            <span>Model:</span> <strong>LSTM 4-Ch (62KB)</strong>
           </div>
           <div class="meter-item">
             <span>Confidence:</span> <strong id="confidenceVal">99.8%</strong>
@@ -228,7 +308,7 @@
           </div>
           <div class="chart-legend-custom">
             <span class="legend-dot temp-line"></span> Temp (°C)
-            <span class="legend-dot limit-line"></span> Threshold (75°C)
+            <span class="legend-dot limit-line"></span> Threshold (<span id="tempLegendVal">65°C</span>)
           </div>
         </div>
         <div class="chart-container">
@@ -236,8 +316,25 @@
         </div>
       </div>
 
+      <!-- Acoustic Sound Waveform Chart -->
+      <div class="chart-card" id="chartCardSound">
+        <div class="chart-card-header">
+          <div>
+            <h3 class="chart-title"><i data-lucide="mic"></i> Acoustic Sound Waveform & Limits</h3>
+            <p class="chart-subtitle">Real-time SPL noise from INMP441 MEMS microphone with dynamic safety limit</p>
+          </div>
+          <div class="chart-legend-custom">
+            <span class="legend-dot sound-line"></span> Sound (dB SPL)
+            <span class="legend-dot limit-line"></span> Threshold (<span id="soundLegendVal">80dB</span>)
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="soundChart"></canvas>
+        </div>
+      </div>
+
       <!-- Model Diagnostic Probabilities Chart -->
-      <div class="chart-card chart-card-wide">
+      <div class="chart-card">
         <div class="chart-card-header">
           <div>
             <h3 class="chart-title"><i data-lucide="pie-chart"></i> TinyML Classification Probability Distribution</h3>
@@ -289,6 +386,7 @@
               <th>Vib Y (g)</th>
               <th>Current (A)</th>
               <th>Temp (°C)</th>
+              <th>Sound (dB)</th>
               <th>Predicted Condition</th>
               <th>Confidence</th>
               <th>Status</th>
@@ -297,7 +395,7 @@
           <tbody id="logTableBody">
             <!-- Dynamic rows inserted here -->
             <tr class="empty-row" id="emptyRow">
-              <td colspan="9">No records captured yet. Starting telemetry receiver...</td>
+              <td colspan="10">No records captured yet. Starting telemetry receiver...</td>
             </tr>
           </tbody>
         </table>
@@ -309,6 +407,6 @@
   <!-- Notification Toast Container Stack -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20261119_4"></script>
 </body>
 </html>

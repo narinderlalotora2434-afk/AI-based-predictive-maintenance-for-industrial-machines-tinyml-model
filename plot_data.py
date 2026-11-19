@@ -30,21 +30,23 @@ def main():
     # Set up the plotting style for a premium, clean dark theme
     plt.style.use('dark_background')
     
-    fig, axes = plt.subplots(3, 4, figsize=(20, 12), sharex='row')
+    fig, axes = plt.subplots(4, 4, figsize=(20, 16), sharex='row')
     fig.patch.set_facecolor('#121212')  # Sleek dark background
     
     # Custom vibrant color palette for each sensor
     sensor_colors = {
         'vibration': '#00F5FF',      # Electric Cyan
         'motor_current': '#FF3366',  # Bright Magenta
-        'temperature': '#FFA500'     # Warning Orange
+        'temperature': '#FFA500',    # Warning Orange
+        'sound': '#A855F7'           # Electric Violet (INMP441 Acoustic)
     }
     
-    sensors = ['vibration', 'motor_current', 'temperature']
+    sensors = ['vibration', 'motor_current', 'temperature', 'sound']
     sensor_units = {
         'vibration': 'Acceleration (G)',
         'motor_current': 'Current (A)',
-        'temperature': 'Temperature (°C)'
+        'temperature': 'Temperature (°C)',
+        'sound': 'Acoustic (dB SPL)'
     }
     
     # Plotting loop
@@ -73,7 +75,7 @@ def main():
             # Format axis labels
             if col_idx == 0:
                 ax.set_ylabel(sensor_units[sensor], color='#E0E0E0', fontsize=12, fontweight='bold')
-            if row_idx == 2:
+            if row_idx == 3:
                 ax.set_xlabel('Time (s)', color='#E0E0E0', fontsize=11)
             
             # Set titles on top row subplots

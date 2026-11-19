@@ -249,6 +249,138 @@ body {
   cursor: pointer;
 }
 
+/* Thresholds & Parameter Limits Bar */
+.thresholds-bar {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1.25rem;
+  margin-bottom: 1.5rem;
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+}
+
+.thresholds-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.thresholds-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.thresholds-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.thresholds-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-outline {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-outline:hover {
+  background: rgba(239, 68, 68, 0.25);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.2);
+}
+
+.thresholds-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: flex-end;
+}
+
+.threshold-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 140px;
+  flex: 1 1 140px;
+}
+
+.threshold-item label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.input-unit {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.3rem 0.6rem;
+  transition: border-color var(--transition-fast);
+}
+
+.input-unit:focus-within {
+  border-color: var(--color-cyan);
+}
+
+.input-unit input {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+  width: 100%;
+  outline: none;
+}
+
+.input-unit span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-left: 0.35rem;
+}
+
+.select-input-sm {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--color-cyan);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  outline: none;
+  cursor: pointer;
+}
+
 .select-input option {
   background: var(--bg-card);
   color: var(--text-main);
@@ -324,6 +456,11 @@ body {
   transition: var(--transition-normal);
   position: relative;
   overflow: hidden;
+}
+
+.kpi-card.breached {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.45) !important;
 }
 
 .kpi-card:hover {
@@ -487,6 +624,7 @@ body {
 .legend-dot.vib-x { background: #06b6d4; }
 .legend-dot.vib-y { background: #a855f7; }
 .legend-dot.temp-line { background: #f59e0b; }
+.legend-dot.sound-line { background: #c084fc; box-shadow: 0 0 6px rgba(192, 132, 252, 0.6); }
 .legend-dot.limit-line { background: #ef4444; }
 
 .chart-container {
@@ -496,7 +634,7 @@ body {
 }
 
 .bar-chart-container {
-  height: 200px;
+  height: 240px;
 }
 
 /* Data Records Section */

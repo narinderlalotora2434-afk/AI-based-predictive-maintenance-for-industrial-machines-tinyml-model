@@ -1,6 +1,9 @@
+import os
+os.environ['KERAS_HOME'] = os.path.abspath('.keras')
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
 import numpy as np
 import tensorflow as tf
-import os
 
 def get_file_size_kb(filepath):
     if os.path.exists(filepath):

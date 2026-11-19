@@ -35,11 +35,17 @@ def generate_sequence(sequence_id, label, fs=100, duration=10, seed=None):
     temp_base = 40.0 + 2.0 * (1 - np.exp(-t / 2.0))
     temp_noise = np.random.normal(0, 0.08, n_points)
     
+    # --- SOUND / ACOUSTIC SENSOR (dB SPL) ---
+    # Baseline sound: normal motor running acoustic hum around 48 dB + noise
+    sound_base = 48.0 + 1.2 * np.sin(2 * np.pi * f_rot * t) + 0.8 * np.sin(2 * np.pi * 2 * f_rot * t)
+    sound_noise = np.random.normal(0, 0.4, n_points)
+    
     # Inject fault conditions
     if label == 'healthy':
         vibration = vib_base + vib_noise
         current = cur_base + cur_noise
         temperature = temp_base + temp_noise
+        sound = sound_base + sound_noise
         
     elif label == 'bearing_wear':
         # Bearing wear: periodic high-frequency impacting shocks at 85 Hz
@@ -60,9 +66,14 @@ def generate_sequence(sequence_id, label, fs=100, duration=10, seed=None):
         current_drift = 0.6 * drift
         temp_drift = 8.0 * drift
         
+        # Acoustic emission: metal-on-metal clicking & squeal bursts up to 85 dB
+        sound_impacts = impacts * (2.0 + 20.0 * drift)
+        sound_drift = 15.0 * drift
+        
         vibration = vib_base + drift_impacts + vib_noise
         current = cur_base + current_drift + cur_noise
         temperature = temp_base + temp_drift + temp_noise
+        sound = sound_base + sound_impacts + sound_drift + sound_noise
         
     elif label == 'misalignment':
         # Misalignment: elevated 1x and 2x vibration amplitudes drifting up over time (nearly doubled amplitude)
@@ -73,10 +84,14 @@ def generate_sequence(sequence_id, label, fs=100, duration=10, seed=None):
         current_drift = 1.5 * drift
         # Higher temperature rise (up to +15°C)
         temp_drift = 15.0 * drift
+        # Acoustic droning resonance (up to 72 dB)
+        sound_drone = 8.0 * drift * np.sin(2 * np.pi * f_rot * t) + 5.0 * drift * np.sin(2 * np.pi * 2 * f_rot * t)
+        sound_drift = 12.0 * drift
         
         vibration = vib_base + vib_drift_1x + vib_drift_2x + vib_noise
         current = cur_base + current_drift + cur_noise
         temperature = temp_base + temp_drift + temp_noise
+        sound = sound_base + sound_drone + sound_drift + sound_noise
         
     elif label == 'overheating':
         # Overheating: vibration and current are normal, but temperature drifts severely
@@ -85,6 +100,8 @@ def generate_sequence(sequence_id, label, fs=100, duration=10, seed=None):
         current = cur_base + cur_noise
         temp_drift = 60.0 * drift
         temperature = temp_base + temp_drift + temp_noise
+        # Slight fan rush / dry bearing hum
+        sound = sound_base + 3.0 * drift + sound_noise
         
     else:
         raise ValueError(f"Unknown label: {label}")
@@ -95,6 +112,7 @@ def generate_sequence(sequence_id, label, fs=100, duration=10, seed=None):
         'vibration': vibration,
         'motor_current': current,
         'temperature': temperature,
+        'sound': sound,
         'label': label
     })
 

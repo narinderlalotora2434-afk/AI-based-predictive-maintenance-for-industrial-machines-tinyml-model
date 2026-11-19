@@ -1,4 +1,7 @@
 import os
+os.environ['KERAS_HOME'] = os.path.abspath('.keras')
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
 import numpy as np
 import tensorflow as tf
 
@@ -89,9 +92,10 @@ def main():
     X_lstm_test = (X_lstm[test_mask] - mean) / std
     y_lstm_test = np.array([label_map[lbl] for lbl in y_lstm_str[test_mask]])
 
-    # Rebuild static batch model for TFLite Micro compatibility (batch_shape=(1, 200, 3))
+    # Rebuild static batch model for TFLite Micro compatibility (batch_shape=(1, 200, 4))
+    n_features = X_lstm_train.shape[2]
     static_lstm = tf.keras.Sequential([
-        tf.keras.layers.Input(batch_shape=(1, 200, 3), name='input_1'),
+        tf.keras.layers.Input(batch_shape=(1, 200, n_features), name='input_1'),
         tf.keras.layers.LSTM(32, return_sequences=True, name='lstm_1'),
         tf.keras.layers.LSTM(32, return_sequences=False, name='lstm_2'),
         tf.keras.layers.Dropout(0.2, name='dropout_1'),
